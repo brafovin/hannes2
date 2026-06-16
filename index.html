@@ -326,11 +326,21 @@ const keys = {};
 document.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'Enter' || e.code === 'NumpadEnter') handleEnter();
+  if (e.code === 'KeyL') toggleLeaderboard();
   e.preventDefault();
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
 
+function toggleLeaderboard() {
+  if (state === 'start' || state === 'win' || state === 'gameover') {
+    showLeaderboard = !showLeaderboard;
+  }
+}
+
 function handleEnter() {
+  // Leaderboard close
+  if (showLeaderboard) { showLeaderboard = false; return; }
+
   if (state === 'start') {
     startGame();
   } else if (state === 'levelcomplete') {
@@ -633,9 +643,13 @@ function checkGoal() {
   if (!goal) return;
   const gx = goal.x, gy = goal.y - 80;
   if (rectOverlap(player.x, player.y, player.w, player.h, gx, gy, 30, 80)) {
+    totalTime += levelTime;
     state = 'levelcomplete';
     levelCompleteTimer = 0;
-    totalTime += levelTime;
+    // Last level → save to leaderboard
+    if (currentLevel === LEVELS.length - 1) {
+      lbSubmit(totalTime);
+    }
   }
 }
 
@@ -901,9 +915,140 @@ function drawHUD() {
 }
 
 // ============================================================
-// SCREENS
+// LEADERBOARD (localStorage)
 // ============================================================
-function drawStartScreen() {
+const LB_KEY = 'obby_leaderboard';
+const LB_MAX = 10; // top 10 entries
+
+function lbLoad() {
+  try { return JSON.parse(localStorage.getItem(LB_KEY)) || []; }
+  catch { return []; }
+}
+
+function lbSave(entries) {
+  localStorage.setItem(LB_KEY, JSON.stringify(entries));
+}
+
+// Save a completed run. totalMs = full game time in milliseconds.
+function lbSubmit(totalMs) {
+  const entries = lbLoad();
+  const date = new Date().toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
+  entries.push({ time: totalMs, date });
+  entries.sort((a, b) => a.time - b.time);
+  if (entries.length > LB_MAX) entries.length = LB_MAX;
+  lbSave(entries);
+}
+
+function fmtMs(ms) {
+  const s = Math.floor(ms / 1000);
+  const mm = String(Math.floor(s / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  const cs = String(Math.floor((ms % 1000) / 10)).padStart(2, '0');
+  return `${mm}:${ss}.${cs}`;
+}
+
+// ── Leaderboard screen state ─────────────────────────────────
+let showLeaderboard = false; // toggle from start or win screen
+
+function drawLeaderboardScreen() {
+  // Dark overlay
+  ctx.fillStyle = 'rgba(5,5,30,0.97)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  for (let i = 0; i < 60; i++) {
+    ctx.fillRect((Math.sin(i * 137.5) * 0.5 + 0.5) * W, (Math.cos(i * 137.5) * 0.5 + 0.5) * H, 1.5, 1.5);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#FFD700';
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 38px sans-serif';
+  ctx.fillText('🏆  RANGLISTE  🏆', W / 2, 58);
+  ctx.shadowBlur = 0;
+
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Nur abgeschlossene Spiele (alle 5 Level) werden gewertet', W / 2, 82);
+
+  const entries = lbLoad();
+
+  if (entries.length === 0) {
+    ctx.fillStyle = '#888';
+    ctx.font = '20px sans-serif';
+    ctx.fillText('Noch keine Einträge.', W / 2, 240);
+    ctx.fillText('Schließe alle 5 Level ab, um in die Rangliste zu kommen!', W / 2, 272);
+  } else {
+    // Table header
+    const colX = [80, W / 2 - 50, W / 2 + 80, W - 80];
+    ctx.fillStyle = '#555';
+    ctx.fillRect(40, 100, W - 80, 1);
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.textAlign = 'left';  ctx.fillText('#',      colX[0] - 30, 120);
+    ctx.textAlign = 'left';  ctx.fillText('RANG',   colX[0],      120);
+    ctx.textAlign = 'center';ctx.fillText('ZEIT',   colX[2],      120);
+    ctx.textAlign = 'right'; ctx.fillText('DATUM',  colX[3],      120);
+    ctx.fillRect(40, 127, W - 80, 1);
+    ctx.fillStyle = '#333';
+
+    const medals = ['🥇','🥈','🥉'];
+    const rowH = 38;
+
+    entries.forEach((e, i) => {
+      const y = 128 + i * rowH + rowH * 0.7;
+
+      // Row bg
+      ctx.fillStyle = i === 0 ? 'rgba(255,215,0,0.07)' :
+                      i === 1 ? 'rgba(192,192,192,0.05)' :
+                      i === 2 ? 'rgba(205,127,50,0.05)' :
+                      i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
+      ctx.fillRect(40, 128 + i * rowH, W - 80, rowH);
+
+      // Rank number / medal
+      ctx.font = i < 3 ? '20px sans-serif' : 'bold 16px sans-serif';
+      ctx.fillStyle = i < 3 ? '#fff' : '#999';
+      ctx.textAlign = 'center';
+      ctx.fillText(i < 3 ? medals[i] : `${i + 1}.`, colX[0] - 10, y);
+
+      // Name placeholder (just "Spieler")
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillStyle = i === 0 ? '#FFD700' : i === 1 ? '#C0C0C0' : i === 2 ? '#CD7F32' : '#ddd';
+      ctx.textAlign = 'left';
+      ctx.fillText('Spieler', colX[0] + 10, y);
+
+      // Time — highlight personal best
+      ctx.font = 'bold 17px monospace';
+      ctx.fillStyle = i === 0 ? '#FFD700' : '#7FFFD4';
+      ctx.textAlign = 'center';
+      ctx.fillText(fmtMs(e.time), colX[2], y);
+
+      // Date
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#666';
+      ctx.textAlign = 'right';
+      ctx.fillText(e.date, colX[3], y);
+    });
+
+    ctx.fillStyle = '#333';
+    ctx.fillRect(40, 128 + entries.length * rowH, W - 80, 1);
+  }
+
+  // Back button
+  const blink = Math.floor(Date.now() / 500) % 2 === 0;
+  ctx.fillStyle = blink ? '#00FF88' : '#00aa55';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('[ L oder ENTER → Zurück ]', W / 2, H - 22);
+  ctx.textAlign = 'left';
+}
+
+// ── Clear leaderboard (debug) — press Delete on leaderboard ──
+document.addEventListener('keydown', e => {
+  if (showLeaderboard && e.code === 'Delete') { lbSave([]); }
+});
   ctx.fillStyle = '#1a1a4e';
   ctx.fillRect(0, 0, W, H);
 
@@ -937,10 +1082,14 @@ function drawStartScreen() {
   ];
   controls.forEach((t, i) => ctx.fillText(t, W/2, 270 + i * 26));
 
+  const blink = Math.floor(Date.now() / 500) % 2 === 0;
   ctx.fillStyle = '#00FF88';
   ctx.font = 'bold 20px sans-serif';
-  const blink = Math.floor(Date.now() / 500) % 2 === 0;
-  if (blink) ctx.fillText('Press ENTER to Play', W/2, 430);
+  if (blink) ctx.fillText('[ ENTER → Spielen ]', W/2, 420);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = '16px sans-serif';
+  ctx.fillText('[ L → Rangliste anzeigen ]', W/2, 450);
 
   ctx.textAlign = 'left';
 }
@@ -1013,7 +1162,11 @@ function drawWinScreen() {
   const blink = Math.floor(Date.now() / 500) % 2 === 0;
   ctx.fillStyle = '#00FF88';
   ctx.font = '20px sans-serif';
-  if (blink) ctx.fillText('Press ENTER to Play Again', W/2, 380);
+  if (blink) ctx.fillText('[ ENTER → Nochmal spielen ]', W/2, 360);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = '16px sans-serif';
+  ctx.fillText('[ L → Rangliste anzeigen ]', W/2, 395);
 
   ctx.textAlign = 'left';
 }
@@ -1030,18 +1183,21 @@ function gameLoop(timestamp) {
   ctx.clearRect(0, 0, W, H);
 
   if (state === 'start') {
+    if (showLeaderboard) { drawLeaderboardScreen(); requestAnimationFrame(gameLoop); return; }
     drawStartScreen();
     requestAnimationFrame(gameLoop);
     return;
   }
 
   if (state === 'gameover') {
+    if (showLeaderboard) { drawLeaderboardScreen(); requestAnimationFrame(gameLoop); return; }
     drawGameOverScreen();
     requestAnimationFrame(gameLoop);
     return;
   }
 
   if (state === 'win') {
+    if (showLeaderboard) { drawLeaderboardScreen(); requestAnimationFrame(gameLoop); return; }
     drawWinScreen();
     requestAnimationFrame(gameLoop);
     return;
