@@ -190,6 +190,115 @@ let platforms = [];
 let checkpoints = [];
 let goal = null;
 
+// ── Falling Red Blocks ──────────────────────────────────────
+// How many blocks spawn per level (index = level 0..4)
+const BLOCKS_PER_LEVEL = [2, 4, 7, 11, 16];
+let fallingBlocks = [];
+let blockSpawnTimer = 0;
+// Spawn interval in ms: gets shorter each level
+const BLOCK_SPAWN_INTERVAL = [1800, 1300, 950, 650, 400];
+
+function spawnFallingBlock() {
+  const ld = LEVELS[currentLevel];
+  // Spawn above the visible area at a random x near the player
+  const spread = 300;
+  const spawnX = player.x - spread + Math.random() * spread * 2;
+  const sz = 18 + Math.random() * 18; // size 18–36
+  fallingBlocks.push({
+    x: spawnX,
+    y: camY - 60,
+    w: sz, h: sz,
+    vy: 3 + Math.random() * 3,
+    rotation: 0,
+    rotSpeed: (Math.random() - 0.5) * 0.12,
+    alive: true,
+    warningX: spawnX, // for ground shadow
+  });
+}
+
+function updateFallingBlocks(dt) {
+  if (state !== 'play') return;
+  const dtF = dt / 16.67;
+  const count = BLOCKS_PER_LEVEL[currentLevel];
+  const interval = BLOCK_SPAWN_INTERVAL[currentLevel];
+
+  blockSpawnTimer += dt;
+  // Spawn up to `count` blocks concurrently; keep refilling
+  if (blockSpawnTimer >= interval && fallingBlocks.filter(b => b.alive).length < count) {
+    blockSpawnTimer = 0;
+    spawnFallingBlock();
+  }
+
+  fallingBlocks.forEach(b => {
+    if (!b.alive) return;
+    b.vy = Math.min(b.vy + 0.25 * dtF, 18);
+    b.y += b.vy * dtF;
+    b.rotation += b.rotSpeed * dtF;
+
+    // Remove when far below screen
+    if (b.y > camY + H + 200) {
+      b.alive = false;
+    }
+
+    // Hit player
+    if (player.invincible === 0 &&
+        rectOverlap(player.x, player.y, player.w, player.h, b.x, b.y, b.w, b.h)) {
+      b.alive = false;
+      die();
+    }
+  });
+
+  // Clean up dead blocks
+  if (fallingBlocks.length > 60) fallingBlocks = fallingBlocks.filter(b => b.alive);
+}
+
+function drawFallingBlocks() {
+  fallingBlocks.forEach(b => {
+    if (!b.alive) return;
+
+    // Shadow on nearest platform below (just draw at bottom of screen area)
+    const shadowY = camY + H - 30;
+    if (b.y < shadowY) {
+      const dist = shadowY - b.y;
+      const alpha = Math.max(0, 0.4 - dist / (H * 1.5));
+      const scale = Math.max(0.3, 1 - dist / H);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(b.x - camX + b.w / 2, shadowY - camY, b.w * scale * 0.6, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Block
+    ctx.save();
+    ctx.translate(b.x - camX + b.w / 2, b.y - camY + b.h / 2);
+    ctx.rotate(b.rotation);
+    // Glow
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 12;
+    // Dark shadow offset
+    ctx.fillStyle = '#800000';
+    ctx.fillRect(-b.w / 2 + 3, -b.h / 2 + 3, b.w, b.h);
+    // Main red block
+    ctx.fillStyle = '#e53935';
+    ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+    // Highlight
+    ctx.fillStyle = 'rgba(255,180,180,0.45)';
+    ctx.fillRect(-b.w / 2 + 2, -b.h / 2 + 2, b.w * 0.45, b.h * 0.3);
+    // Skull icon
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = `bold ${Math.floor(b.w * 0.55)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('☠', 0, 1);
+    ctx.restore();
+  });
+  ctx.textBaseline = 'alphabetic';
+}
+
 // Camera
 let camX = 0, camY = 0;
 let camTargetX = 0, camTargetY = 0;
@@ -279,6 +388,10 @@ function loadLevel(idx) {
   player.invincible = 0;
   player.checkpointX = 100;
   player.checkpointY = 200;
+
+  // Reset falling blocks
+  fallingBlocks = [];
+  blockSpawnTimer = 0;
 
   // Camera
   camX = player.x - W / 2;
@@ -938,6 +1051,7 @@ function gameLoop(timestamp) {
     if (state === 'play') {
       levelTime += dt;
       updatePlatforms(dt);
+      updateFallingBlocks(dt);
       updatePlayer(dt);
       resolveCollisions();
       checkCheckpoints();
@@ -969,6 +1083,7 @@ function gameLoop(timestamp) {
     platforms.forEach(p => drawPlatform(p));
     checkpoints.forEach(cp => drawCheckpoint(cp));
     drawGoal();
+    drawFallingBlocks();
     drawPlayer();
     drawHUD();
 
