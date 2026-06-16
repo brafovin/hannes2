@@ -170,8 +170,10 @@ canvas.height = H;
 const GRAVITY = 0.5;
 const MAX_FALL = 15;
 const MOVE_SPEED = 4;
+const SPRINT_SPEED = 9;
 const JUMP_FORCE = -13;
 const SPRING_FORCE = -22;
+const MAX_JUMPS = 5;
 const PLAYER_W = 32;
 const PLAYER_H = 40;
 
@@ -571,17 +573,22 @@ function resolveCollisions() {
 // PLAYER UPDATE
 // ============================================================
 let jumpPressed = false;
+let airJumps = 0; // extra jumps used in air
 
 function updatePlayer(dt) {
   const dtF = dt / 16.67;
 
   // Horizontal
-  const left  = keys['ArrowLeft']  || keys['KeyA'];
+  const left   = keys['ArrowLeft']  || keys['KeyA'];
   const right  = keys['ArrowRight'] || keys['KeyD'];
+  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
   const jumpKey = keys['Space'] || keys['KeyW'] || keys['ArrowUp'];
 
-  if (left)  { player.vx -= 1.5 * dtF; if (player.vx < -MOVE_SPEED) player.vx = -MOVE_SPEED; player.dir = -1; }
-  if (right) { player.vx += 1.5 * dtF; if (player.vx > MOVE_SPEED) player.vx = MOVE_SPEED; player.dir = 1; }
+  const maxSpd = sprint ? SPRINT_SPEED : MOVE_SPEED;
+  const accel  = sprint ? 2.5 : 1.5;
+
+  if (left)  { player.vx -= accel * dtF; if (player.vx < -maxSpd) player.vx = -maxSpd; player.dir = -1; }
+  if (right) { player.vx += accel * dtF; if (player.vx > maxSpd)  player.vx = maxSpd;  player.dir = 1; }
 
   // Friction
   if (!left && !right) {
@@ -589,11 +596,21 @@ function updatePlayer(dt) {
     if (Math.abs(player.vx) < 0.1) player.vx = 0;
   }
 
-  // Jump
-  if (jumpKey && !jumpPressed && player.onGround) {
-    player.vy = JUMP_FORCE;
-    player.stretch = 10;
-    player.onGround = false;
+  // Reset air jumps when on ground
+  if (player.onGround) airJumps = 0;
+
+  // Jump — 1 ground jump + 4 air jumps = 5 total
+  if (jumpKey && !jumpPressed) {
+    const jumpsLeft = MAX_JUMPS - 1 - airJumps; // -1 for ground jump
+    if (player.onGround) {
+      player.vy = JUMP_FORCE;
+      player.stretch = 10;
+      player.onGround = false;
+    } else if (airJumps < MAX_JUMPS - 1) {
+      player.vy = JUMP_FORCE * 0.9;
+      player.stretch = 8;
+      airJumps++;
+    }
   }
   jumpPressed = !!jumpKey;
 
@@ -894,9 +911,30 @@ function drawHUD() {
   ctx.fillStyle = 'white';
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText('← → / A D: Move', W - 10, H - 36);
-  ctx.fillText('Space / W / ↑: Jump', W - 10, H - 22);
+  ctx.fillText('← → / A D: Move  |  Shift: Sprint  |  Space / W / ↑: Springen (5x)', W - 10, H - 10);
   ctx.globalAlpha = 1;
+
+  // Sprung-Anzeige (kleine Herzen = Sprünge übrig)
+  const jumpsLeft = MAX_JUMPS - airJumps - (player.onGround ? 0 : 1);
+  const jumpsUsable = player.onGround ? MAX_JUMPS : Math.max(0, MAX_JUMPS - 1 - airJumps);
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText('Sprünge:', 12, H - 10);
+  for (let i = 0; i < MAX_JUMPS; i++) {
+    ctx.fillStyle = i < (player.onGround ? MAX_JUMPS : Math.max(0, MAX_JUMPS - 1 - airJumps))
+      ? '#00e5ff' : 'rgba(255,255,255,0.2)';
+    ctx.fillText('▲', 80 + i * 18, H - 10);
+  }
+
+  // Sprint-Anzeige
+  const isSprinting = keys['ShiftLeft'] || keys['ShiftRight'];
+  if (isSprinting) {
+    ctx.fillStyle = '#f39c12';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚡ SPRINT ⚡', W / 2, H - 10);
+  }
   ctx.textAlign = 'left';
 
   ctx.restore();
