@@ -179,7 +179,7 @@ const PLAYER_H = 40;
 
 let state = 'start'; // 'start','play','levelcomplete','gameover','win'
 let currentLevel = 0;
-let lives = 3;
+let lives = 10;
 let totalTime = 0;
 let levelTime = 0;
 let lastTimestamp = 0;
@@ -417,18 +417,18 @@ function handleEnter() {
       state = 'win';
     }
   } else if (state === 'gameover') {
-    lives = 3; currentLevel = 0; totalTime = 0;
+    lives = 10; currentLevel = 0; totalTime = 0;
     loadLevel(0);
     state = 'play';
   } else if (state === 'win') {
-    lives = 3; currentLevel = 0; totalTime = 0;
+    lives = 10; currentLevel = 0; totalTime = 0;
     loadLevel(0);
     state = 'play';
   }
 }
 
 function startGame() {
-  lives = 3; currentLevel = 0; totalTime = 0;
+  lives = 10; currentLevel = 0; totalTime = 0;
   loadLevel(0);
   state = 'play';
 }
@@ -1123,11 +1123,13 @@ function drawPlayer() {
 function drawHUD() {
   ctx.save();
 
-  // Lives
-  ctx.font = 'bold 22px sans-serif';
-  for (let i = 0; i < 3; i++) {
-    ctx.fillStyle = i < lives ? '#FF3333' : '#444';
-    ctx.fillText('♥', 16 + i * 28, 30);
+  // Lives — 10 Herzen in 2 Reihen à 5
+  ctx.font = 'bold 18px sans-serif';
+  for (let i = 0; i < 10; i++) {
+    ctx.fillStyle = i < lives ? '#FF3333' : '#333';
+    const row = Math.floor(i / 5);
+    const col = i % 5;
+    ctx.fillText('♥', 12 + col * 22, 22 + row * 18);
   }
 
   // Level name
